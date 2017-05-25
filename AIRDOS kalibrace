@@ -7,6 +7,8 @@ import string
 import os
 import matplotlib.pyplot as plt
 
+%pylab inline --no-import-all
+
 def Flux(fileName,outName):
     fto = fileName #  File to Open
     name = outName
@@ -110,3 +112,15 @@ def linearFit(x,y):
     plt.savefig('Kalibrace\\'+figName)
     return z,a
     
+A,B,C=[],[],[]
+Flux("DATALOG.TXT","60Co") # vytvori .csv s nazvem 60Co1.csv
+for i in range(3):
+    name1="ener"+str(i+1)
+    name2="mcnp"+str(i+1)
+    A.append((Kalibrace(name1,1,","))[0])
+    B.append((Kalibrace(name2,1000,";"))[0])
+    C.append(name1)
+A.append((Kalibrace("60Co1",1,","))[0])
+B.append(1.125)
+print(linearFit(A,B))
+plt.show()
