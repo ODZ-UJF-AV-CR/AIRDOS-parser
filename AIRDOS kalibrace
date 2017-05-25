@@ -1,1 +1,112 @@
+import pandas as pd
+import numpy as np
+from datetime import datetime, timedelta
+from IPython.display import Image as ImageDisp
+from pandas import DataFrame
+import string
+import os
+import matplotlib.pyplot as plt
 
+def Flux(fileName,outName):
+    fto = fileName #  File to Open
+    name = outName
+    l=[]
+    l.extend(range(0,548))
+    df = pd.read_table(fto, sep=',', header=None, names=l, comment='*')
+    rc = df.loc[df[0]=='$CANDY']
+    rc.reset_index(drop=True, inplace=True)
+    rc = rc.apply(pd.to_numeric, errors='coerce')
+    i=1
+    points=[[0,1],[2,0]]
+    print(points)
+    while(points[0]!=points[1]): # Dokud nejsou obe kliknuti stejna, tak to porad bude cyklovat
+        plt.figure(figsize=(15,5))
+        plt.rcParams.update({'font.size': 15})
+        rc['flux'] = rc[range(24,544)].sum(axis=1)
+        rc['flux'].plot(c='orange')
+        plt.ylabel('Flux')
+        points=plt.ginput(2)
+        plt.close()
+        if round(points[0][0])>=round(points[1][0]):
+            X1=int(round(points[1][0]))
+            X2=int(round(points[0][0]))
+        else:
+            X1=int(round(points[0][0]))
+            X2=int(round(points[1][0]))
+        sheet = name + str(i) + ".csv"
+        spectrum = rc.ix[X1:X2,20:520].sum()
+        spectrum.to_csv(sheet)
+        i+=1
+        
+def Gauss(x, amp, cen, wid):
+    "1-d gaussian: gaussian(x, amp, cen, wid)"
+    return (amp/(np.sqrt(2*np.pi)*wid)) * np.exp(-(x-cen)**2 /(2*wid**2))
+    
+def Kalibrace(fileName,scale,delim):
+    if not os.path.isdir('Kalibrace'):
+        os.makedirs('Kalibrace')
+    result=[]
+    with open(fileName+".csv","r") as myCSVfile:
+        data=csv.reader(myCSVfile, delimiter=delim)
+        data=list(data)
+        noiseChannel=float(data[0][0])
+        print(noiseChannel)
+        x,y=[],[]
+        for line in data:
+            x.append(float(line[0])-noiseChannel)
+            y.append(float(line[1]))
+        plt.plot(x,y)
+        points=plt.ginput(2)
+        plt.close()
+        if round(points[0][0],3)>=round(points[1][0],3):
+        	X1=int(scale*round(points[1][0],3))
+        	X2=int(scale*round(points[0][0],3))
+        else:
+        	X1=int(scale*round(points[0][0],3))
+        	X2=int(scale*round(points[1][0],3))
+        delta_x=X2-X1
+        delta_y=float(y[X2])-float(y[X1])
+        a=delta_y/delta_x
+        b=y[X1]
+        spread=np.linspace(0,X2-X1,X2-X1+1)
+        spread=spread[:-1]+noiseChannel+X1
+        peak=y[X1:X2]-(a*spread+b) # odecitani linearniho pozadi od piku
+        # Inicializacni odhady pro fitovani Gaussem
+        amp=max(y[X1:X2])
+        cen=X1+(X2-X1)/2
+        wid=(X2-X1)/4
+        popt,pcov = curve_fit(Gauss, spread, peak, p0=[amp,cen,wid]) # fitovani Gaussem
+        result.append(popt[1])
+        fig=plt.figure()
+        ax=fig.add_subplot(111)
+        ax.plot(spread,peak, 'b+' ,label='data')
+        ax.plot(spread, Gauss(spread, *popt), 'r-', label='fit')
+        ax.legend()
+        figName="Gauss_"+fileName+".png"
+        plt.savefig('Kalibrace\\'+figName)
+        plt.close(fig)
+    return result
+    
+def linearFit(x,y):
+    k=[0,max(x)+max(x)/8.0]
+    l=[0,0]
+    f=[0,0]
+    z=np.polyfit(x,y,1)
+    l[0]=z[0]*k[0]+z[1]
+    l[1]=z[0]*k[1]+z[1]
+    a=(curve_fit(lambda x, m: m*x, x, y))[0]
+    f[0]=a[0]*k[0]
+    f[1]=a[0]*k[1]
+    fig=plt.figure()
+    ax=fig.add_subplot(111)
+    ax.plot(x,y, 'b+' ,label='data')
+    ax.plot(k,l, label=str(z[1])+"+"+str(z[0])+"*x")
+    ax.plot(k,f, label=str(a[0])+"x"+" zero intercept")
+    ax.legend()
+    plt.ylabel("Absorbed energy in Si diode [MeV]")
+    plt.xlabel("Channel number [-]")
+    plt.title("Energy calibration of Airdos")
+    figName="Calibration.png"
+    plt.savefig('Kalibrace\\'+figName)
+    return z,a
+    
